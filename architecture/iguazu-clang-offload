@@ -1,0 +1,15 @@
+export USE_OPENMP=1
+export LIBS += -lm -L${IGUAZU_BLAS_ROOT}/lib64 -lopenblas
+export ADD_LIBS += -L$(IGUAZU_HDF5_ROOT)/lib -lhdf5 -lgfortran
+
+export INC_PATH += -I${IGUAZU_HDF5_ROOT}/include
+
+ifdef USE_OPENMP
+export CXX=mpicxx -g -O3 -std=c++14 -fopenmp -fopenmp-targets=nvptx64
+export CC=mpicc -g -O3 -fopenmp -fopenmp-targets=nvptx64
+export F77=mpif77 -g -O3 -fopenmp
+else
+export CXX=mpicxx -g -O3 -std=c++14
+export CC=mpicc -g -O3
+export F77=mpif77 -g -O3  
+endif

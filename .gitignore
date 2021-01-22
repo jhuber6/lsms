@@ -1,3 +1,4 @@
+*~
 *.o
 *.lo
 *.dSYM
@@ -16,3 +17,4 @@ lua-5.2.4/man
 *.log
 *.toc
 lsms_manual.pdf
+run/
