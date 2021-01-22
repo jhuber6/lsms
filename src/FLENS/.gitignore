@@ -1,0 +1,13 @@
+*.o
+*.a
+*.so
+*.out
+*.f
+*.doc
+*.un~
+cxxlapack/*/*.doc
+flens/examples/*
+!flens/examples/lu/
+!flens/examples/*.cc
+!flens/examples/*.doc
+!flens/examples/Makefile
