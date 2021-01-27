@@ -337,7 +337,7 @@ void calculateTauMatrix(LSMSSystemParameters &lsms, LocalTypeInfo &local, AtomDa
   int kkrsz_ns=lsms.n_spin_cant*atom.kkrsz;
 
   Matrix<Complex> tau00(kkrsz_ns, kkrsz_ns);
-  Complex *devM, *devT0;
+  Complex *devM, *devT0, *ompM;
 
   // =======================================
   // build the KKR matrix
@@ -358,6 +358,14 @@ void calculateTauMatrix(LSMSSystemParameters &lsms, LocalTypeInfo &local, AtomDa
   case MST_BUILD_KKR_MATRIX_CPP:
     buildKKRMatrixCPU(lsms, local, atom, iie, energy, prel, m);
     break;
+#ifdef ACCELERATOR_OPENMP_OFFLOAD
+  case MST_BUILD_KKR_MATRIX_OMP:
+    // Start just mapping in the data as needed
+    // Later copy the matrix to and from only when needed
+// #pragma omp target data map(from: ompM[0 : nrmat_ns * nrmat_ns])
+    buildKKRMatrixOMP(lsms, local, atom, iie, energy, prel, m);
+    break;
+#endif
 #if defined(ACCELERATOR_CUDA_C)
   case MST_BUILD_KKR_MATRIX_ACCELERATOR:
 /*
@@ -376,6 +384,7 @@ void calculateTauMatrix(LSMSSystemParameters &lsms, LocalTypeInfo &local, AtomDa
   }
   }
 */
+// #pragma omp target data map(M[0:nrmat*nrmat])
     devM = deviceStorage->getDevM();
     // printf("entering buildKKRMatrixCuda:\n");
     buildKKRMatrixCuda(lsms, local, atom, *deviceStorage, deviceAtoms[localAtomIndex], ispin, iie, energy, prel,
@@ -390,7 +399,7 @@ void calculateTauMatrix(LSMSSystemParameters &lsms, LocalTypeInfo &local, AtomDa
     break;
 #endif
   default:
-    printf("UNKNOWN KKR MARIX BUILD KERNEL (%x)!!!\n",buildKKRMatrixKernel);
+    printf("UNKNOWN KKR MATRIX BUILD KERNEL (%x)!!!\n",buildKKRMatrixKernel);
     exit(1);
   }
 
@@ -401,6 +410,7 @@ void calculateTauMatrix(LSMSSystemParameters &lsms, LocalTypeInfo &local, AtomDa
   {
   case MST_BUILD_KKR_MATRIX_F77:
   case MST_BUILD_KKR_MATRIX_CPP:
+  case MST_BUILD_KKR_MATRIX_OMP:
   // built on CPU:
     switch(linearSolver)
     {
@@ -420,6 +430,12 @@ void calculateTauMatrix(LSMSSystemParameters &lsms, LocalTypeInfo &local, AtomDa
       devT0 = deviceStorage->getDevT0();
       transferT0MatrixToGPUCuda(devT0, lsms, local, atom, iie);
       break;
+#endif
+#ifdef ACCELERATOR_OPENMP_OFFLOAD
+//    case MST_LINEAR_SOLVER_ZBLOCKLU_OPENMP_OFFLOAD:
+//    #pragma omp target data exit(from:m[0:nrmat*nrmat])
+      // 
+ //   break:
 #endif
 #ifdef ACCELERATOR_HIP
     case MST_LINEAR_SOLVER_ZGETRF_ROCSOLVER:
@@ -450,6 +466,10 @@ void calculateTauMatrix(LSMSSystemParameters &lsms, LocalTypeInfo &local, AtomDa
       devT0 = deviceStorage->getDevT0();
       transferT0MatrixToGPUCuda(devT0, lsms, local, atom, iie);
       break;
+#ifdef ACCELERATOR_OPENMP_OFFLOAD
+// case MST_LINEAR_SOLVER_ZBLOCKLU_OPENMP_OFFLOAD
+// #pragma data enter map(to:m[0:nrmatnarmt])
+#endif
 #ifdef ACCELERATOR_HIP
     case MST_LINEAR_SOLVER_ZGETRF_ROCSOLVER:
       printf("MIXING HIP AND CUDA KERNELS (%x)!!!\n",buildKKRMatrixKernel);
@@ -487,7 +507,7 @@ void calculateTauMatrix(LSMSSystemParameters &lsms, LocalTypeInfo &local, AtomDa
     } break;
 #endif
   default:
-    printf("UNKNOWN KKR MARIX BUILD KERNEL (%x)!!!\n",buildKKRMatrixKernel);
+    printf("UNKNOWN KKR MATRIX BUILD KERNEL (%x)!!!\n",buildKKRMatrixKernel);
     exit(1);
   }
 

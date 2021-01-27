@@ -24,6 +24,11 @@
 #define MST_BUILD_KKR_MATRIX_CPP         0x2000
 void buildKKRMatrixCPU(LSMSSystemParameters &lsms, LocalTypeInfo &local, AtomData &atom, int iie, Complex energy, Complex prel,
                     Matrix<Complex> &m);
+#define MST_BUILD_KKR_MATRIX_OMP         0x4000
+#ifdef ACCELERATOR_OPENMP_OFFLOAD
+void buildKKRMatrixOMP(LSMSSystemParameters &lsms, LocalTypeInfo &local, AtomData &atom, int iie, Complex energy, Complex prel,
+                       Matrix<Complex> &m);
+#endif
 #define MST_BUILD_KKR_MATRIX_CUDA 0x3000
 #ifdef ACCELERATOR_CUDA_C
 void buildKKRMatrixCuda(LSMSSystemParameters &lsms, LocalTypeInfo &local, AtomData &atom, DeviceStorage &d,
@@ -51,6 +56,7 @@ inline std::string buildKKRMatrixName(unsigned int buildKKRMatrixId)
     case MST_BUILD_KKR_MATRIX_F77: name += "LSMS 1 buildKKRMatrix"; break;
     case MST_BUILD_KKR_MATRIX_CPP: name += "CPU buildKKRMatrix"; break;
     case MST_BUILD_KKR_MATRIX_ACCELERATOR: name += "Accelerator buildKKRMatrix"; break;
+    case MST_BUILD_KKR_MATRIX_OMP: name += "OpenMP Offloading buildKKRMatrix"; break;
     default: name += "unknwon buildKKRMatrix";
     }
   name += idstr;

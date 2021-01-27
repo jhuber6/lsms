@@ -13,6 +13,10 @@ ifdef HIP_CXX
 OBJ += linearSolvers_HIP.o buildKKRMatrix_HIP.o
 endif
 
+ifdef USE_OPENMP
+OBJ += buildKKRMatrix_OMP.o
+endif
+
 all: libMultipleScattering.a
 
 clean:
