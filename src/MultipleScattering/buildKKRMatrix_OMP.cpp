@@ -15,9 +15,6 @@
 // we might want to distinguish between systems where all lmax (and consequently kkrsz_ns) are the same
 // and systems with potential different lmax on different atoms and l steps
 
-// #define COMPARE_ORIGINAL 1
-
-
 inline static void calculateHankel(Complex prel, Real r, int lend, Complex *hfn)
 {
   const Complex sqrtm1(0.0, 1.0);
@@ -61,6 +58,25 @@ inline void calculateSinCosPowers(Real *rij, int lend, Real *sinmp, Real *cosmp)
   }
 }
 
+Complex dlmFunction(Complex *hfn, double *cosmp, double *sinmp, double *plm, int l, int m)
+{
+  int mAbs = std::abs(m);
+
+  Complex dlm = hfn[l]*plm[(l*(l + 1) / 2 + mAbs)];
+  if(m==0) return dlm;
+
+  if(m<0)
+  {
+    dlm = dlm * Complex(cosmp[mAbs], sinmp[mAbs]);
+    if(mAbs & 0x01) // m is odd
+      dlm = -dlm;
+  } else {
+    dlm = dlm * Complex(cosmp[mAbs], -sinmp[mAbs]);
+  }
+
+  return dlm;
+}
+
 void setBGijOMP(LSMSSystemParameters &lsms, AtomData &atom, int ir1, int ir2, int iOffset, int jOffset, Matrix<Complex> &bgij)
 {
   if(lsms.n_spin_cant == 1) return;
@@ -88,7 +104,6 @@ void buildBGijOMP(LSMSSystemParameters &lsms, AtomData &atom, int ir1, int ir2, 
   Complex hfn[2*lsms.maxlmax + 1];
   Real sinmp[2*lsms.maxlmax + 1];
   Real cosmp[2*lsms.maxlmax + 1];
-  // Real plm[((lsms.maxlmax+1) * (lsms.maxlmax+2)) / 2];
   Real plm[lsms.angularMomentumIndices.ndlm];
   Complex dlm[lsms.angularMomentumIndices.ndlj];
   Real r = std::sqrt(rij[0]*rij[0] + rij[1]*rij[1] + rij[2]*rij[2]);
@@ -105,9 +120,6 @@ void buildBGijOMP(LSMSSystemParameters &lsms, AtomData &atom, int ir1, int ir2, 
 
   associatedLegendreFunctionNormalized<Real>(cosTheta, lend, plm);
   // for associatedLegendreFunctionNormalized all clm[i] == 1.0
-  // for(int j=0;j<ndlm_local;j++)
-  //   plm[j]=clm[j]*plm[j];
-  
   //     calculate cos(phi) and sin(phi) .................................
   // needs to be serial
   calculateSinCosPowers(rij, lend, sinmp, cosmp);
@@ -116,28 +128,8 @@ void buildBGijOMP(LSMSSystemParameters &lsms, AtomData &atom, int ir1, int ir2, 
   {
   // can be parallel
   int j=0;
-    // dlm is a function in the CUDA implementation repalce to save memory
-    
-  // replace with function
-// #pragma omp for nowait
-  for(int l=0; l<=lend; l++)
-  {
-    int ll = l*(l+1);
-    j = ll;
-    ll = ll/2;
-    Real m1m = 1.0;
-    dlm[j] = hfn[l]*plm[ll];
-    for(int m=1; m<=l; m++)
-    {
-      m1m = -m1m;
-      Complex fac = plm[ll+m] * std::complex<Real>(cosmp[m],sinmp[m]);
-      dlm[j-m] = hfn[l]*m1m*fac;
-      dlm[j+m] = hfn[l]*std::conj(fac);
-    }
-  }
 //     ================================================================
 //     calculate g(R_ij)...............................................
-  // for(int i=0; i<kkri*kkrj; i++) gij[i]=0.0;
 // #pragma omp for collapse(2) nowait
   for(int i=0; i<kkri; i++)
     for(int j=0; j<kkrj; j++)
@@ -169,7 +161,8 @@ void buildBGijOMP(LSMSSystemParameters &lsms, AtomData &atom, int ir1, int ir2, 
       {
         int j=l3*(l3+1)+m3;
         // gij[lm2+lm1*kkri] = gij[lm2+lm1*kkri]+cgnt(l3/2,lm1,lm2)*dlm[j];
-        bgij(iOffset + lm2, jOffset + lm1) += GauntCoeficients::cgnt(l3/2,lm1,lm2)*dlm[j];
+        bgij(iOffset + lm2, jOffset + lm1) += GauntCoeficients::cgnt(l3/2,lm1,lm2)* 
+          dlmFunction(hfn, cosmp, sinmp, plm, l3, m3);
       }
       // gij[lm2+lm1*kkri]=pi4*illp(lm2,lm1)*gij[lm2+lm1*kkri];
       bgij(iOffset + lm2, jOffset + lm1) *= pi4 * IFactors::illp(lm2,lm1);
@@ -192,11 +185,10 @@ void buildKKRMatrixLMaxIdenticalOMP(LSMSSystemParameters &lsms, LocalTypeInfo &l
   int nrmat_ns = lsms.n_spin_cant*atom.nrmat; // total size of the kkr matrix
   int kkrsz_ns = lsms.n_spin_cant*atom.kkrsz; // size of t00 block
 
-  Complex cmone = Complex(-1.0,0.0);
-  Complex czero=0.0;
+  Complex cmone = Complex(-1.0, 0.0);
+  Complex czero = 0.0;
 
   Matrix<Complex> bgij(nrmat_ns, nrmat_ns);
-  Matrix<Complex> bgijSmall(kkrsz_ns, kkrsz_ns);
   
   m = 0.0; bgij = 0.0;
   for(int i=0; i<nrmat_ns; i++) m(i,i)=1.0;
@@ -204,11 +196,11 @@ void buildKKRMatrixLMaxIdenticalOMP(LSMSSystemParameters &lsms, LocalTypeInfo &l
   // loop over the LIZ blocks
   for(int ir1 = 0; ir1 < atom.numLIZ; ir1++)
   {
-    int iOffset = ir1 * kkrsz_ns; // this assumes that there are NO lStep reductions of lmax!!!
     for(int ir2 = 0; ir2 < atom.numLIZ; ir2++)
     {
       if(ir1 != ir2)
       {
+        int iOffset = ir1 * kkrsz_ns; // this assumes that there are NO lStep reductions of lmax!!!
         int jOffset = ir2 * kkrsz_ns; // this assumes that there are NO lStep reductions of lmax!!!
         Real rij[3];
         int lmax1 = atom.LIZlmax[ir1];

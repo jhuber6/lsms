@@ -18,4 +18,5 @@ export OMPI_MPIF90=gfortran
 export CC=clang
 export CXX=clang++
 export F77=gfortran
+export F90=gfortran
 export FC=gfortran
