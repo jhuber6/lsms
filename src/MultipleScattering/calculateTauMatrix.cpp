@@ -343,8 +343,11 @@ void calculateTauMatrix(LSMSSystemParameters &lsms, LocalTypeInfo &local, AtomDa
   // build the KKR matrix
   // =======================================
   m.resize(nrmat_ns,nrmat_ns);
+  Matrix<Complex> mc;
+  mc.resize(nrmat_ns,nrmat_ns);
 
   double timeBuildKKRMatrix=MPI_Wtime();
+  Complex err = 0.0;
 
   switch(buildKKRMatrixKernel)
   {
@@ -362,8 +365,16 @@ void calculateTauMatrix(LSMSSystemParameters &lsms, LocalTypeInfo &local, AtomDa
   case MST_BUILD_KKR_MATRIX_OMP:
     // Start just mapping in the data as needed
     // Later copy the matrix to and from only when needed
-// #pragma omp target data map(from: ompM[0 : nrmat_ns * nrmat_ns])
+//#pragma omp target data map(alloc: ompM[0 : nrmat_ns * nrmat_ns])
+//    { }
+//    buildKKRMatrixCPU(lsms, local, atom, iie, energy, prel, mc);
     buildKKRMatrixOMP(lsms, local, atom, iie, energy, prel, m);
+
+ //   for (int i = 0; i < nrmat_ns; ++i)
+ //     for (int j = 0; j < nrmat_ns; ++j)
+ //       err += mc(i, j) - m(i, j);
+ //   printf ("Error %f\n", std::abs(err));
+
     break;
 #endif
 #if defined(ACCELERATOR_CUDA_C)

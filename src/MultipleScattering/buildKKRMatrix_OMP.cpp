@@ -222,27 +222,18 @@ void buildKKRMatrixLMaxIdenticalOMP(LSMSSystemParameters &lsms, LocalTypeInfo &l
         rij[2]=atom.LIZPos(2,ir1)-atom.LIZPos(2,ir2);
         
         buildBGijOMP(lsms, atom, ir1, ir2, rij, energy, prel, iOffset, jOffset, bgij);
-        // buildBGijOMP(lsms, atom, ir1, ir2, rij, energy, prel, 0, 0, bgijSmall);
              
-        BLAS::zgemm_("n", "n", &kkr1_ns, &kkr2_ns, &kkr1_ns, &cmone,
-                     &local.tmatStore(iie*local.blkSizeTmatStore, atom.LIZStoreIdx[ir1]), &kkr1_ns,
-                     // &tmat_n(0, 0), &kkr1_ns,
-                     &bgij(iOffset, jOffset), &nrmat_ns, &czero,
-                     // &bgijSmall(0, 0), &kkrsz_ns, &czero,
-                     &m(iOffset, jOffset), &nrmat_ns);
+        Complex *tmatData = &local.tmatStore(iie*local.blkSizeTmatStore, atom.LIZStoreIdx[ir1]);
+        for (int i = 0; i < kkr1_ns; i++) {
+          for (int j = 0; j < kkr2_ns; j++) {
+            Complex sum = 0.0;
+            for (int k = 0; k < kkr1_ns; k++)
+              sum += cmone * tmatData[k * kkr1_ns + i] * bgij(iOffset + k, jOffset + j);
 
-        // M(i, j) = tmatStore(...) * bij(i, j)
+            m(iOffset + i, jOffset + j) = sum;
+          }
+        }
         
-//        for(int i=0; i<kkr1_ns; i++)
-//          for(int j=0; j<kkr2_ns; j++)
-//          {
-//            m(iOffset + i, jOffset + j) = 0.0;
-//            for(int k=0; k<kkr1_ns ; k++)
-//              m(iOffset + i, jOffset + j) -= tmat_n(i, k) *
-//                local.tmatStore(iie*local.blkSizeTmatStore + , atom.LIZStoreIdx[ir1]) * bgij(iOffset + k, jOffset + j);
-//                bgijSmall(k, j);
-//          }
-//        
       }
     }
   }
@@ -289,11 +280,16 @@ void buildKKRMatrixLMaxDifferentOMP(LSMSSystemParameters &lsms, LocalTypeInfo &l
 
         buildBGijOMP(lsms, atom, ir1, ir2, rij, energy, prel, iOffset, jOffset, bgij);
         
-        // Write without BLAS and use openmp parallel
-        BLAS::zgemm_("n", "n", &kkr1_ns, &kkr2_ns, &kkr1_ns, &cmone,
-                     &local.tmatStore(iie*local.blkSizeTmatStore, atom.LIZStoreIdx[ir1]), &kkrsz_ns,
-                     &bgij(iOffset, jOffset), &nrmat_ns, &czero,
-                     &m(iOffset, jOffset), &nrmat_ns);
+        Complex *tmatData = &local.tmatStore(iie*local.blkSizeTmatStore, atom.LIZStoreIdx[ir1]);
+        for (int i = 0; i < kkr1_ns; i++) {
+          for (int j = 0; j < kkr2_ns; j++) {
+            Complex sum = 0.0;
+            for (int k = 0; k < kkr1_ns; k++)
+              sum += cmone * tmatData[k * kkr1_ns + i] * bgij(iOffset + k, jOffset + j);
+
+            m(iOffset + i, jOffset + j) = sum;
+          }
+        }
        
       }
     }
@@ -301,7 +297,7 @@ void buildKKRMatrixLMaxDifferentOMP(LSMSSystemParameters &lsms, LocalTypeInfo &l
 }
 
 // *** Check output between each stage to make sure the changes are correct
-// 1. Rewrite ZGEMM to run using loops inside the device
+// 1. Rewrite ZGEMM to run using loops inside the device !
 // 2. Rewrite DLM LUT to use a function
 // 3. Add OpenMP with no parallelism and get the data onto the device (M on device)
 // 4. Add CUDA block parallelism across the blocks and threads inside the SetBjij / buildBGij routines
