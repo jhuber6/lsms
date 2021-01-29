@@ -99,6 +99,7 @@ void buildBGijOMP(int ir1, int ir2, Real *rij, Complex energy, Complex prel,
                   int *LIZlmax, int *lofk, int *mofk, Complex *illp,
                   int ndlj_illp, Complex* ilp1, Real *cgnt, int lmaxp1_cgnt, int ndlj_cgnt,
                   Complex *bgij, int nrmat_ns) {
+  // #pragma omp allocate(pteam_mem_alloc) hfn, sinmp, cosmp, plm, dlm...
   Complex hfn[2 * maxlmax + 1];
   Real sinmp[2 * maxlmax + 1];
   Real cosmp[2 * maxlmax + 1];
@@ -166,7 +167,6 @@ void buildBGijOMP(int ir1, int ir2, Real *rij, Complex energy, Complex prel,
 }
 
 // Remove zgemm calls
-// Replace dlm LUT with function -- Too large for shared memory
 void buildKKRMatrixLMaxIdenticalOMP(LSMSSystemParameters &lsms,
                                     LocalTypeInfo &local, AtomData &atom,
                                     int iie, Complex energy, Complex prel,
@@ -187,21 +187,22 @@ void buildKKRMatrixLMaxIdenticalOMP(LSMSSystemParameters &lsms,
     for (int j = 0; j < nrmat_ns; j++)
       bgij[j * nrmat_ns +i] = 0.0;
 
-  // loop over the LIZ blocks
   Complex *mDev = &m(0, 0);
   Complex *bgijDev = &bgij(0, 0);
+
+  Complex *tmatData = &local.tmatStore(0, 0);
   Complex *tmatDev = &local.tmatStore(iie * local.blkSizeTmatStore, 0);
   int tmatDim = local.tmatStore.l_dim();
+  int tmatSize = local.tmatStore.size();
 
   int numLIZ = atom.numLIZ;
   int kkrsz = atom.kkrsz;
 
   int n_spin_cant = lsms.n_spin_cant;
   int maxlmax = lsms.maxlmax;
-  int ndlm = lsms.angularMomentumIndices.ndlm;
-  int ndlj = lsms.angularMomentumIndices.ndlj;
 
   Complex *ilp1 = IFactors::ilp1.data();
+  int ilp1_dim = IFactors::ilp1.size();
 
   Complex *illp = &IFactors::illp(0, 0);
   int ndlj_illp = IFactors::illp.l_dim();
@@ -214,13 +215,30 @@ void buildKKRMatrixLMaxIdenticalOMP(LSMSSystemParameters &lsms,
   int *LIZStoreIdx = atom.LIZStoreIdx.data();
   Real *LIZPos = &atom.LIZPos(0, 0);
 
+  int ndlj = lsms.angularMomentumIndices.ndlj;
+  int ndlm = lsms.angularMomentumIndices.ndlm;
   int *lofk = AngularMomentumIndices::lofk.data(); // [0:ndlj]
   int *mofk = AngularMomentumIndices::mofk.data(); // [0:ndlm]
 
-//#pragma omp target data \
-//  map(to: illp[0 : 
-//  map(to: lofk[0 : ndlj]) \
-//  map(to: mofk[0 : ndlm])
+  // loop over the LIZ blocks
+  //
+  // Eventually a lot of these maps can be moved to calculateAllTaumatrices to
+  // save time copying from the device. The matrix M will be allocated
+  // previously and returned on the device. bgij will be allocated and
+  // initialized to 0 on the device.
+#pragma omp target data \
+  map(tofrom: mDev[0 : nrmat_ns * nrmat_ns]) \
+  map(to: bgijDev[0 : nrmat_ns * nrmat_ns]) \
+  map(to: tmatData[0 : tmatSize]) \
+  map(to: cgnt[0 : lmaxp1_cgnt * ndlj_cgnt * ndlj_cgnt]) \
+  map(to: LIZlmax[0 : numLIZ]) \
+  map(to: LIZStoreIdx[0 : numLIZ]) \
+  map(to: LIZPos[0 : 3*numLIZ]) \
+  map(to: ilp1[0 : ilp1_dim]) \
+  map(to: illp[0 : ndlj_illp * ndlj_illp]) \
+  map(to: lofk[0 : ndlj]) \
+  map(to: mofk[0 : ndlm])
+{ }
   for (int ir1 = 0; ir1 < numLIZ; ir1++) {
     for (int ir2 = 0; ir2 < numLIZ; ir2++) {
       if (ir1 != ir2) {
