@@ -17,7 +17,7 @@
 // atoms and l steps
 
 inline static void calculateHankel(Complex prel, Real r, int lend,
-                                   Complex *hfn) {
+                                   Complex *hfn, Complex *ilp1) {
   const Complex sqrtm1(0.0, 1.0);
   Complex z = prel * r;
   hfn[0] = -sqrtm1;
@@ -32,7 +32,7 @@ c                  l    ij
 */
   z = std::exp(sqrtm1 * z) / r;
   for (int l = 0; l <= lend; l++) {
-    hfn[l] = -hfn[l] * z * IFactors::ilp1[l];
+    hfn[l] = -hfn[l] * z * ilp1[l];
   }
 }
 
@@ -97,7 +97,7 @@ void setBGijOMP(int ir1, int ir2, int iOffset, int jOffset, int kkrsz,
 void buildBGijOMP(int ir1, int ir2, Real *rij, Complex energy, Complex prel,
                   int iOffset, int jOffset, int ndlm, int ndlj, int maxlmax,
                   int *LIZlmax, int *lofk, int *mofk, Complex *illp,
-                  int ndlj_illp, Real *cgnt, int lmaxp1_cgnt, int ndlj_cgnt,
+                  int ndlj_illp, Complex* ilp1, Real *cgnt, int lmaxp1_cgnt, int ndlj_cgnt,
                   Complex *bgij, int nrmat_ns) {
   Complex hfn[2 * maxlmax + 1];
   Real sinmp[2 * maxlmax + 1];
@@ -114,7 +114,7 @@ void buildBGijOMP(int ir1, int ir2, Real *rij, Complex energy, Complex prel,
   Real pi4 = 4.0 * 2.0 * std::asin(1.0);
   Real cosTheta = rij[2] / r;
 
-  calculateHankel(prel, r, lend, hfn);
+  calculateHankel(prel, r, lend, hfn, ilp1);
 
   associatedLegendreFunctionNormalized<Real>(cosTheta, lend, plm);
   // for associatedLegendreFunctionNormalized all clm[i] == 1.0
@@ -201,6 +201,8 @@ void buildKKRMatrixLMaxIdenticalOMP(LSMSSystemParameters &lsms,
   int ndlm = lsms.angularMomentumIndices.ndlm;
   int ndlj = lsms.angularMomentumIndices.ndlj;
 
+  Complex *ilp1 = IFactors::ilp1.data();
+
   Complex *illp = &IFactors::illp(0, 0);
   int ndlj_illp = IFactors::illp.l_dim();
 
@@ -212,9 +214,13 @@ void buildKKRMatrixLMaxIdenticalOMP(LSMSSystemParameters &lsms,
   int *LIZStoreIdx = atom.LIZStoreIdx.data();
   Real *LIZPos = &atom.LIZPos(0, 0);
 
-  int *lofk = AngularMomentumIndices::lofk.data();
-  int *mofk = AngularMomentumIndices::mofk.data();
+  int *lofk = AngularMomentumIndices::lofk.data(); // [0:ndlj]
+  int *mofk = AngularMomentumIndices::mofk.data(); // [0:ndlm]
 
+//#pragma omp target data \
+//  map(to: illp[0 : 
+//  map(to: lofk[0 : ndlj]) \
+//  map(to: mofk[0 : ndlm])
   for (int ir1 = 0; ir1 < numLIZ; ir1++) {
     for (int ir2 = 0; ir2 < numLIZ; ir2++) {
       if (ir1 != ir2) {
@@ -237,7 +243,7 @@ void buildKKRMatrixLMaxIdenticalOMP(LSMSSystemParameters &lsms,
         rij[2] = LIZPos[ir1 * 3 + 2] - LIZPos[ir2 * 3 + 2];
 
         buildBGijOMP(ir1, ir2, rij, energy, prel, iOffset, jOffset, ndlm, ndlj,
-                     maxlmax, LIZlmax, lofk, mofk, illp, ndlj_illp, cgnt,
+                     maxlmax, LIZlmax, lofk, mofk, illp, ndlj_illp, ilp1, cgnt,
                      lmaxp1_cgnt, ndlj_cgnt, bgijDev, nrmat_ns);
 
         setBGijOMP(ir1, ir2, iOffset, jOffset, kkrsz, n_spin_cant, LIZlmax,
@@ -299,6 +305,8 @@ void buildKKRMatrixLMaxDifferentOMP(LSMSSystemParameters &lsms,
   int ndlm = lsms.angularMomentumIndices.ndlm;
   int ndlj = lsms.angularMomentumIndices.ndlj;
 
+  Complex *ilp1 = IFactors::ilp1.data();
+
   Complex *illp = &IFactors::illp(0, 0);
   int ndlj_illp = IFactors::illp.l_dim();
 
@@ -338,7 +346,7 @@ void buildKKRMatrixLMaxDifferentOMP(LSMSSystemParameters &lsms,
         rij[2] = LIZPos[ir1 * 3 + 2] - LIZPos[ir2 * 3 + 2];
 
         buildBGijOMP(ir1, ir2, rij, energy, prel, iOffset, jOffset, ndlm, ndlj,
-                     maxlmax, LIZlmax, lofk, mofk, illp, ndlj_illp, cgnt,
+                     maxlmax, LIZlmax, lofk, mofk, illp, ndlj_illp, ilp1, cgnt,
                      lmaxp1_cgnt, ndlj_cgnt, bgijDev, nrmat_ns);
 
         setBGijOMP(ir1, ir2, iOffset, jOffset, kkrsz, n_spin_cant, LIZlmax,
